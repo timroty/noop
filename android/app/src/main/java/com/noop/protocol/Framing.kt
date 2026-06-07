@@ -322,4 +322,60 @@ object Framing {
         frame[i] = ((trailer ushr 24) and 0xFFL).toByte()
         return frame
     }
+
+    /**
+     * EXPERIMENTAL: build a WHOOP 5.0/MG ("puffin") command frame in the CRC16 envelope.
+     *
+     * Direct port of the Swift `puffinCommandFrame` (WhoopProtocol/Framing.swift). The inner record
+     * is `[type][seq][cmd] + payload`; `declLen = inner.size + 4` (the CRC32 tail); the CRC16-Modbus
+     * covers the first six header bytes. `type` defaults to 35 (COMMAND) and `header` to `[0x00,
+     * 0x01]`, mirroring the structure of the only puffin frame we know a real strap accepts (the
+     * static CLIENT_HELLO). The returned frame round-trips through `parseFrame(frame, WHOOP5)`.
+     *
+     * Layout (LE = little-endian):
+     *   inner  = [type][seq][cmd] + payload
+     *   declLen = inner.size + 4
+     *   frame  = [0xAA, 0x01, declLen LE(2), header[0], header[1]]
+     *          + crc16Modbus(frame[0..6)) LE(2)
+     *          + inner
+     *          + crc32(inner) LE(4)
+     */
+    fun puffinCommandFrame(
+        cmd: Int,
+        seq: Int,
+        payload: ByteArray = byteArrayOf(0x00),
+        type: Int = PacketType.COMMAND.rawValue,   // 35
+        header: ByteArray = byteArrayOf(0x00, 0x01),
+    ): ByteArray {
+        val inner = ByteArray(3 + payload.size)
+        inner[0] = (type and 0xFF).toByte()
+        inner[1] = (seq and 0xFF).toByte()
+        inner[2] = (cmd and 0xFF).toByte()
+        System.arraycopy(payload, 0, inner, 3, payload.size)
+
+        val declLen = inner.size + 4
+
+        // Six-byte header: SOF, format byte, declLen LE(2), header(2). CRC16-Modbus is over these.
+        val head = ByteArray(6)
+        head[0] = 0xAA.toByte()
+        head[1] = 0x01
+        head[2] = (declLen and 0xFF).toByte()
+        head[3] = ((declLen ushr 8) and 0xFF).toByte()
+        head[4] = header[0]
+        head[5] = header[1]
+        val c16 = Crc.crc16Modbus(head)
+        val c32 = Crc.crc32(inner)
+
+        val frame = ByteArray(6 + 2 + inner.size + 4)
+        var i = 0
+        System.arraycopy(head, 0, frame, i, 6); i += 6
+        frame[i++] = (c16 and 0xFF).toByte()
+        frame[i++] = ((c16 ushr 8) and 0xFF).toByte()
+        System.arraycopy(inner, 0, frame, i, inner.size); i += inner.size
+        frame[i++] = (c32 and 0xFFL).toByte()
+        frame[i++] = ((c32 ushr 8) and 0xFFL).toByte()
+        frame[i++] = ((c32 ushr 16) and 0xFFL).toByte()
+        frame[i] = ((c32 ushr 24) and 0xFFL).toByte()
+        return frame
+    }
 }

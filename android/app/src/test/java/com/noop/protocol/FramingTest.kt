@@ -66,6 +66,56 @@ class FramingTest {
         assertEquals(wantCrc32, gotCrc32)
     }
 
+    // MARK: - puffinCommandFrame (EXPERIMENTAL WHOOP 5.0/MG)
+
+    @Test
+    fun puffinCommandFrame_roundTripsThroughWhoop5Parse() {
+        // EXPERIMENTAL: a puffin TOGGLE_REALTIME_HR(3) probe, payload [1], seq 7. The CRC16 header +
+        // CRC32 payload must both verify when parsed as a WHOOP5 frame (parseWhoop5 reports crcOk).
+        val frame = Framing.puffinCommandFrame(
+            cmd = CommandNumber.TOGGLE_REALTIME_HR.rawValue,
+            seq = 7,
+            payload = byteArrayOf(1),
+        )
+        val r = Framing.parseFrame(frame, DeviceFamily.WHOOP5)
+        assertTrue(r.ok)
+        assertEquals(true, r.crcOk)
+        // Inner record starts at offset 8: [type=35][seq=7][cmd=3][payload=1].
+        assertEquals(PacketType.COMMAND.rawValue, frame[8].toInt() and 0xFF)
+        assertEquals(7, frame[9].toInt() and 0xFF)
+        assertEquals(CommandNumber.TOGGLE_REALTIME_HR.rawValue, frame[10].toInt() and 0xFF)
+        assertEquals(1, frame[11].toInt() and 0xFF)
+    }
+
+    @Test
+    fun puffinCommandFrame_envelopeShapeAndCrcsAreSelfConsistent() {
+        val frame = Framing.puffinCommandFrame(
+            cmd = CommandNumber.TOGGLE_REALTIME_HR.rawValue,
+            seq = 1,
+            payload = byteArrayOf(1),
+        )
+        // SOF 0xAA, format byte 0x01.
+        assertEquals(0xAA.toByte(), frame[0])
+        assertEquals(0x01.toByte(), frame[1])
+        // declaredLength = inner(3+1=4) + 4 = 8; total frame = declaredLength + 8.
+        val declLen = (frame[2].toInt() and 0xFF) or ((frame[3].toInt() and 0xFF) shl 8)
+        assertEquals(8, declLen)
+        assertEquals(declLen + 8, frame.size)
+        // CRC16-Modbus over frame[0..6) is stored LE at frame[6..8).
+        val wantHeader = Crc.crc16Modbus(frame.copyOfRange(0, 6))
+        val gotHeader = (frame[6].toInt() and 0xFF) or ((frame[7].toInt() and 0xFF) shl 8)
+        assertEquals(wantHeader, gotHeader)
+        // CRC32 over the inner record frame[8 until total-4) is stored LE in the last 4 bytes.
+        val payloadEnd = frame.size - 4
+        val inner = frame.copyOfRange(8, payloadEnd)
+        val wantCrc32 = Crc.crc32(inner)
+        val gotCrc32 = (frame[payloadEnd].toLong() and 0xFFL) or
+            ((frame[payloadEnd + 1].toLong() and 0xFFL) shl 8) or
+            ((frame[payloadEnd + 2].toLong() and 0xFFL) shl 16) or
+            ((frame[payloadEnd + 3].toLong() and 0xFFL) shl 24)
+        assertEquals(wantCrc32, gotCrc32)
+    }
+
     // MARK: - parseFrame decode vectors
 
     @Test

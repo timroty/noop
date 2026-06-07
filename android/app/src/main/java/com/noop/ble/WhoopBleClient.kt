@@ -126,6 +126,12 @@ class WhoopBleClient(
     private val deviceId: String = "my-whoop",
     /** Durable trim-cursor store for the offload safe-trim watermark (see [Backfiller]). */
     private val cursorStore: TrimCursorStore = PrefsTrimCursorStore(context),
+    /**
+     * Opt-in switch for the EXPERIMENTAL WHOOP 5.0/MG ("puffin") protocol probes (default OFF).
+     * Read fresh from SharedPreferences each connect so a Settings toggle takes effect on the next
+     * scan. Port of the macOS `PuffinExperiment` gate. NEVER consulted for WHOOP 4.0.
+     */
+    private val puffinExperiment: PuffinExperiment = PuffinExperiment.from(context),
 ) {
 
     companion object {
@@ -964,6 +970,44 @@ class WhoopBleClient(
             }
         }
         if (!ok) log("CLIENT_HELLO write rejected by stack")
+
+        // OPT-IN probe (Settings → Experimental · WHOOP 5/MG, OFF by default). After CLIENT_HELLO,
+        // ask the strap to start its realtime stream with a puffin-framed TOGGLE_REALTIME_HR. This is
+        // a guess we cannot verify without 5/MG hardware; it is written UNACKNOWLEDGED to fd4b0002
+        // only, and is gated on the WHOOP5 family — WHOOP 4.0 never reaches this path. Port of the
+        // PuffinExperiment.isEnabled block in BLEManager.didDiscoverCharacteristicsFor (whoop5 case).
+        if (connectedFamily == DeviceFamily.WHOOP5 && puffinExperiment.isEnabled) {
+            writePuffinRealtimeHrProbe(g, ch)
+        }
+    }
+
+    /**
+     * EXPERIMENTAL WHOOP 5.0/MG probe: a puffin-framed TOGGLE_REALTIME_HR(cmd 3) with payload [0x01],
+     * built via [Framing.puffinCommandFrame] and written WITHOUT a response to the puffin command
+     * characteristic (fd4b0002). Only ever called from the whoop5 path, only when the opt-in
+     * experiment flag is on. Logged clearly as experimental. Port of the macOS opt-in probe.
+     */
+    @SuppressLint("MissingPermission")
+    private fun writePuffinRealtimeHrProbe(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+        seq = (seq + 1) and 0xFF
+        val probe = Framing.puffinCommandFrame(
+            cmd = CommandNumber.TOGGLE_REALTIME_HR.rawValue,
+            seq = seq,
+            payload = byteArrayOf(0x01),
+        )
+        log("WHOOP 5/MG EXPERIMENT: sending puffin TOGGLE_REALTIME_HR to fd4b0002 (experimental).")
+        val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeCharacteristic(ch, probe, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) ==
+                BluetoothGatt.GATT_SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                ch.value = probe
+                g.writeCharacteristic(ch)
+            }
+        }
+        if (!ok) log("Puffin TOGGLE_REALTIME_HR probe rejected by stack")
     }
 
     @SuppressLint("MissingPermission")

@@ -15,11 +15,15 @@ struct SettingsView: View {
     @State private var backupAlertMessage = ""
     @State private var showBackupAlert = false
 
+    /// Opt-in WHOOP 5/MG protocol experiments (off by default). See [PuffinExperiment].
+    @AppStorage(PuffinExperiment.defaultsKey) private var puffinExperiments = false
+
     var body: some View {
         ScreenScaffold(title: "Settings",
                        subtitle: "Your numbers, your strap, and how NOOP works. All on this Mac.") {
             profileCard
             strapCard
+            experimentalCard
             backupCard
             aboutCard
         }
@@ -205,6 +209,30 @@ struct SettingsView: View {
     }
 
     // MARK: - Backup & restore
+
+    // MARK: - Experimental (WHOOP 5 / MG)
+
+    private var experimentalCard: some View {
+        SettingsSection(
+            icon: "flask.fill",
+            title: "Experimental · WHOOP 5 / MG",
+            blurb: "Live heart rate already works on a WHOOP 5/MG strap. These probes go further and try to coax more out of it. They are guesses, off by default, and only ever touch a 5/MG strap — WHOOP 4.0 is never affected."
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: $puffinExperiments) {
+                    Text("Try WHOOP 5/MG protocol probes")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                }
+                .toggleStyle(.switch)
+                .tint(StrandPalette.accent)
+                Text("On a 5/MG connection NOOP will send a puffin realtime-stream request after the handshake, and log what comes back. If you have a 5/MG strap, turning this on and sharing your strap log helps map the protocol. No effect on WHOOP 4.0.")
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
 
     private var backupCard: some View {
         SettingsSection(

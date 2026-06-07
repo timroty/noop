@@ -213,6 +213,23 @@ final class DeviceFamilyFramingTests: XCTestCase {
         XCTAssertEqual(out.first, frame)
     }
 
+    // MARK: - Puffin command frame builder (experimental 5/MG outbound)
+
+    func testPuffinCommandFrameVerifies() {
+        // A puffin TOGGLE_REALTIME_HR (cmd 3, payload [0x01]) must be a well-formed whoop5 frame.
+        let f = puffinCommandFrame(cmd: 3, seq: 7, payload: [0x01])
+        let check = verifyFrame(f, family: .whoop5)
+        XCTAssertTrue(check.ok)
+        XCTAssertEqual(check.crc8OK, true)    // CRC16 header outcome surfaced via crc8OK
+        XCTAssertEqual(check.crc32OK, true)
+        // And it parses back as a whoop5 frame with the seq we set.
+        let parsed = parseFrame(f, family: .whoop5)
+        XCTAssertTrue(parsed.ok)
+        XCTAssertEqual(parsed.seq, 7)
+        // It also reassembles cleanly through the whoop5 reassembler.
+        XCTAssertEqual(Reassembler(family: .whoop5).feed(f), [f])
+    }
+
     func testReassemblerWhoop4DefaultUnchanged() {
         // Default family stays WHOOP 4.0: a 28-byte whoop4 frame (length=0x18=24 -> total 28).
         let frame = Self.hex("aa1800ff28020f3de10128663c0000000000000000000000da855212")

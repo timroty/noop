@@ -719,6 +719,16 @@ extension BLEManager: CBPeripheralDelegate {
                     log("WHOOP 5/MG: writing CLIENT_HELLO to fd4b0002 (experimental).")
                     peripheral.writeValue(Data(hello), for: c, type: .withoutResponse)
                 }
+                if PuffinExperiment.isEnabled {
+                    // OPT-IN probe (Settings → Experimental, off by default): ask the strap to start
+                    // its realtime stream with a puffin-framed TOGGLE_REALTIME_HR. A guess we cannot
+                    // verify without 5/MG hardware; written unacknowledged to fd4b0002 only.
+                    seq = seq &+ 1
+                    let probe = puffinCommandFrame(cmd: WhoopCommand.toggleRealtimeHR.rawValue,
+                                                   seq: seq, payload: [0x01])
+                    log("WHOOP 5/MG EXPERIMENT: sending puffin TOGGLE_REALTIME_HR to fd4b0002")
+                    peripheral.writeValue(Data(probe), for: c, type: .withoutResponse)
+                }
             case BLEManager.cmdNotifyChar,
                  BLEManager.eventNotifyChar,
                  BLEManager.dataNotifyChar,

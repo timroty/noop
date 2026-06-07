@@ -181,6 +181,29 @@ public func frameFromPayload(_ data: [UInt8], type: UInt8, seq: UInt8 = 0, cmd: 
     return frame
 }
 
+/// EXPERIMENTAL: build a WHOOP 5.0/MG ("puffin") command frame in the CRC16 envelope (docs/PROTOCOL.md
+/// §2.2). The inner record is `[type][seq][cmd] + payload`; `declLen = innerLen + 4` (the CRC32 tail);
+/// the CRC16-Modbus covers the first six header bytes. `type` defaults to 35 (COMMAND) and `header`
+/// to `[0x00, 0x01]`, mirroring the structure of the only puffin frame we know a real strap accepts
+/// (the static CLIENT_HELLO). The returned frame round-trips through `verifyFrame(_:family:.whoop5)`.
+/// Whether a 5/MG strap *acts* on a given command is exactly what experimentation discovers, so the
+/// app gates any sending behind an opt-in switch and only writes to the puffin command characteristic.
+public func puffinCommandFrame(cmd: UInt8, seq: UInt8, payload: [UInt8] = [0x00],
+                               type: UInt8 = 35, header: [UInt8] = [0x00, 0x01]) -> [UInt8] {
+    let inner: [UInt8] = [type, seq, cmd] + payload
+    let declLen = inner.count + 4
+    var frame: [UInt8] = [0xAA, 0x01,
+                          UInt8(declLen & 0xFF), UInt8((declLen >> 8) & 0xFF),
+                          header[0], header[1]]
+    let c16 = crc16Modbus(Array(frame[0..<6]))
+    frame.append(UInt8(c16 & 0xFF)); frame.append(UInt8((c16 >> 8) & 0xFF))
+    frame.append(contentsOf: inner)
+    let c32 = crc32(inner)
+    frame.append(UInt8(c32 & 0xFF)); frame.append(UInt8((c32 >> 8) & 0xFF))
+    frame.append(UInt8((c32 >> 16) & 0xFF)); frame.append(UInt8((c32 >> 24) & 0xFF))
+    return frame
+}
+
 /// Accumulate BLE notification fragments into complete frames.
 /// A complete frame is `length + 4` bytes where length = u16 LE at buf[1..3].
 /// Mirrors framing.py Reassembler.
