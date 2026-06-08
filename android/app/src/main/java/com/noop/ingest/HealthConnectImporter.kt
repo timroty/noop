@@ -364,18 +364,26 @@ object HealthConnectImporter {
         onRecord: (T) -> Unit,
     ) {
         var pageToken: String? = null
-        do {
-            val response = client.readRecords(
-                ReadRecordsRequest(
-                    recordType = type,
-                    timeRangeFilter = filter,
-                    pageSize = PAGE_SIZE,
-                    pageToken = pageToken,
+        try {
+            do {
+                val response = client.readRecords(
+                    ReadRecordsRequest(
+                        recordType = type,
+                        timeRangeFilter = filter,
+                        pageSize = PAGE_SIZE,
+                        pageToken = pageToken,
+                    )
                 )
-            )
-            for (record in response.records) onRecord(record)
-            pageToken = response.pageToken
-        } while (pageToken != null)
+                for (record in response.records) onRecord(record)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+        } catch (e: Exception) {
+            // One record type failing (e.g. a device/SDK validation quirk like "count must not be less
+            // than 1" seen on some Health Connect builds) must NOT abort the whole import — log it and
+            // keep whatever was read, so every other data type still comes in (issue #34). The reads
+            // accumulate into shared buckets, so a partial type is simply absent, never corrupt.
+            android.util.Log.w("HealthConnect", "read of ${type.simpleName} failed; skipping: ${e.message}")
+        }
     }
 
     // MARK: - field mapping helpers

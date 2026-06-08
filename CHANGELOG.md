@@ -17,6 +17,23 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## 1.18 — Import fixes (Mac + Android)
+
+- **Fixed (macOS): an Apple Health import overwrote the WHOOP import's status message** in Data Sources
+  (issue #40). The two importers shared one `importing`/`importSummary` state, and only the WHOOP card
+  rendered the summary — so importing Apple Health flipped both buttons to loading and replaced the WHOOP
+  message in the WHOOP section, looking like a data overwrite. The data was always stored under separate
+  sources (`my-whoop` vs `apple-health`); split the UI state per source (`whoopImporting`/`appleImporting`
+  + per-source summaries) and gave the Apple Health card its own status line.
+- **Fixed (Android): one failing Health Connect record type aborted the whole import** (issue #34). All
+  the `readAll` calls ran inside a single try/catch, so a device/SDK quirk on any one type (e.g. the
+  "count must not be less than 1, currently 0" some Health Connect builds throw) failed the entire
+  import. Each type's read is now self-contained — on failure it's logged and skipped, and every other
+  type still imports (reads accumulate into shared buckets, so a partial type is simply absent, never
+  corrupt).
+
+---
+
 ## 1.17 — Sleep from WHOOP 4 on unmapped firmware (Mac)
 
 - **Fixed (macOS): a WHOOP 4 on firmware whose historical record version NOOP hadn't mapped recorded no
