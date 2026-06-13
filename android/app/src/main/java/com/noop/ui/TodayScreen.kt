@@ -685,6 +685,7 @@ private fun HeartRateTrendCard(
                     modifier = Modifier.weight(1f).height(Metrics.chartHeight),
                     color = Palette.metricRose,
                     fill = true,
+                    selectionEnabled = true,
                 )
             }
             // X-axis: start (midnight) / midpoint / end of the selected day's window. Each bucket
@@ -694,11 +695,13 @@ private fun HeartRateTrendCard(
                     val m = idx * 5
                     String.format(Locale.US, "%02d:%02d", m / 60, m % 60)
                 }
-                val xLabels = listOf(
-                    "00:00",
-                    bucketToTime(buckets.size / 2),
-                    if (selectedDay == today) "Now" else bucketToTime(buckets.size - 1),
-                )
+                val xLabels = if (buckets.size >= 3) {
+                    listOf(
+                        "00:00",
+                        bucketToTime(buckets.size / 2),
+                        if (selectedDay == today) "Now" else bucketToTime(buckets.size - 1),
+                    )
+                } else listOf("Start", "", "Now")
                 xLabels.forEach { lbl ->
                     Text(lbl, style = NoopType.footnote, color = Palette.textTertiary, modifier = Modifier.weight(1f))
                 }

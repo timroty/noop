@@ -16,7 +16,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.data.DailyMetric
+import java.time.LocalDate
 import java.util.Calendar
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -61,12 +64,48 @@ fun IntelligenceScreen(vm: AppViewModel) {
             if (live.backfilling) SyncingHistoryNote(chunks = live.syncChunksThisSession)
             EmptyNote()
         } else {
-            SectionHeader(
-                title = "By Day",
-                overline = "Recent",
-                trailing = "${ordered.size} ${if (ordered.size == 1) "day" else "days"}",
+            var range by remember { mutableStateOf(IntelRange.Month) }
+            val filtered = remember(ordered, range) {
+                val n = range.days ?: return@remember ordered
+                val cutoff = LocalDate.now().minusDays((n - 1).toLong()).toString()
+                ordered.filter { it.day >= cutoff }
+            }
+
+            // Header row: section label left, range control right. Lets you narrow the
+            // per-day list to a recent window (lexicographic YYYY-MM-DD compare == chronological).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Metrics.gap),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Overline("Recent")
+                    Text("By Day", style = NoopType.title2, color = Palette.textPrimary)
+                }
+                SegmentedPillControl(
+                    items = IntelRange.entries.toList(),
+                    selection = range,
+                    label = { it.label },
+                    onSelect = { range = it },
+                )
+            }
+            Text(
+                "${filtered.size} ${if (filtered.size == 1) "day" else "days"}",
+                style = NoopType.footnote,
+                color = Palette.textTertiary,
             )
-            ordered.forEach { day -> DayCard(day) }
+
+            if (filtered.isEmpty()) {
+                NoopCard(padding = 18.dp) {
+                    Text(
+                        "No scored days in this window. Widen the range or import more history.",
+                        style = NoopType.subhead,
+                        color = Palette.textSecondary,
+                    )
+                }
+            } else {
+                filtered.forEach { day -> DayCard(day) }
+            }
         }
     }
 }
@@ -299,6 +338,12 @@ private fun sleepValue(totalMin: Double?): String {
     val m = totalMin ?: return "—"
     val total = m.roundToInt()
     return "${total / 60}h ${total % 60}m"
+}
+
+/** Recent-window options for the By Day list. `days == null` means show everything. */
+private enum class IntelRange(val days: Int?, val label: String) {
+    Week(7, "W"), Month(30, "M"), Quarter(90, "3M"),
+    Half(180, "6M"), Year(365, "1Y"), All(null, "ALL"),
 }
 
 /** "YYYY-MM-DD" → "Mon 5 Jun"; falls back to the raw key if it doesn't parse. */

@@ -7,6 +7,8 @@ struct IntelligenceView: View {
     @EnvironmentObject var intelligence: IntelligenceEngine
     @EnvironmentObject var live: LiveState
 
+    @State private var range: IntelRange = .month
+
     var body: some View {
         ScreenScaffold(title: "Intelligence",
                        subtitle: "NOOP scores your charge, effort and rest itself — on-device, no cloud.") {
@@ -37,8 +39,29 @@ struct IntelligenceView: View {
                     symbol: "brain.head.profile"
                 )
             } else {
-                ForEach(intelligence.results) { day in
-                    dayCard(day)
+                // Header row: section label left, range control right. Narrows the per-day
+                // list to a recent window (lexicographic yyyy-MM-dd compare == chronological).
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Recent").strandOverline()
+                        Text("By Day").font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
+                    }
+                    Spacer()
+                    SegmentedPillControl(IntelRange.allCases, selection: $range) { $0.label }
+                }
+                Text("\(filtered.count) \(filtered.count == 1 ? "day" : "days")")
+                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if filtered.isEmpty {
+                    StrandCard(padding: 18) {
+                        Text("No scored days in this window. Widen the range or import more history.")
+                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    ForEach(filtered) { day in
+                        dayCard(day)
+                    }
                 }
             }
         }
@@ -52,6 +75,22 @@ struct IntelligenceView: View {
             }
         }
     }
+
+    /// The day list narrowed to the selected window. `nil` cutoff (ALL) shows everything.
+    private var filtered: [IntelligenceEngine.Computed] {
+        guard let n = range.days else { return intelligence.results }
+        let date = Calendar.current.date(byAdding: .day, value: -(n - 1), to: Date()) ?? Date()
+        let cutoff = Self.dayFmt.string(from: date)
+        return intelligence.results.filter { $0.day >= cutoff }
+    }
+
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     private var explainerCard: some View {
         StrandCard(padding: 20) {
@@ -100,5 +139,24 @@ struct IntelligenceView: View {
         if r >= 67 { return StrandPalette.statusPositive }
         if r >= 34 { return StrandPalette.statusWarning }
         return StrandPalette.statusCritical
+    }
+}
+
+/// Recent-window options for the By Day list. `days == nil` means show everything.
+private enum IntelRange: Int, CaseIterable, Hashable {
+    case week = 7, month = 30, quarter = 90, half = 180, year = 365, all = 0
+
+    /// Trailing days the window spans; `nil` for ALL.
+    var days: Int? { self == .all ? nil : rawValue }
+
+    var label: String {
+        switch self {
+        case .week: return "W"
+        case .month: return "M"
+        case .quarter: return "3M"
+        case .half: return "6M"
+        case .year: return "1Y"
+        case .all: return "ALL"
+        }
     }
 }
