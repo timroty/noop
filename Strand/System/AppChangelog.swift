@@ -7,7 +7,7 @@ enum AppChangelog {
 
     /// Bump this when you add a release below. The "What's New" sheet shows automatically when the
     /// stored last-seen version is behind this. (Decoupled from the bundle version on purpose.)
-    static let currentVersion = "4.0.3"
+    static let currentVersion = "4.0.4"
 
     struct Release: Identifiable {
         let version: String
@@ -19,6 +19,14 @@ enum AppChangelog {
 
     /// Newest first.
     static let releases: [Release] = [
+        Release(
+            version: "4.0.4",
+            title: "Sync visibility + a sharper Stress timeline",
+            date: "June 2026",
+            items: [
+                "**Sync diagnostics: the strap log now shows the newest record your band actually holds.** For \"last night didn't sync\" reports, one connect now tells us whether the night simply hasn't been reached yet by a long backlog (it's banked, the sync is still grinding toward it) versus genuinely not on the strap — instead of guessing. Thanks @idkwargwanbear (#364).",
+                "**Android: the Today stress timeline gets a Y-axis and tap-to-read.** The day's stress chart now has labelled levels and you can scrub it to read each hour. Thanks @ujix (#441).",
+            ]),
         Release(
             version: "4.0.3",
             title: "Date fixes, UI polish & clearer diagnostics",

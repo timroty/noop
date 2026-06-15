@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,14 +31,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -224,10 +232,11 @@ private fun StressDaytimeSection(day: DaytimeStress.Result, onBreathe: () -> Uni
                 DaytimeStressLine(day.hours)
 
                 // Hour ruler under the line (first / midday / last covered hour).
+                // start padding matches stressYAxisWidth so labels align with the chart area.
                 val lo = day.hours.firstOrNull()?.hour
                 val hi = day.hours.lastOrNull()?.hour
                 if (lo != null && hi != null) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(start = stressYAxisWidth)) {
                         Text(hourLabel(lo), style = NoopType.footnote, color = Palette.textTertiary)
                         Spacer(Modifier.weight(1f))
                         Text(hourLabel((lo + hi) / 2), style = NoopType.footnote, color = Palette.textTertiary)
@@ -257,80 +266,155 @@ private fun StressDaytimeSection(day: DaytimeStress.Result, onBreathe: () -> Uni
 
 // MARK: - Daytime autonomic-load line (gradient, same scale as the gauge)
 //
-// A clean Canvas line over the scored waking hours, stroked in the SAME 3-stop stress
-// gradient as the semicircle gauge (calm blue → gold → burnt orange) with a soft fill
-// beneath. Unscored hours break the line (honest gap) rather than interpolating across a
-// data hole. Flat and instrument-grade — no markers, no glow. Mirrors the macOS day line.
+// Interactive Canvas line over the scored waking hours. Tap or drag to scrub across hours
+// and see the stress level at a specific time in a tooltip pill. The Y-axis shows the 0–3
+// scale with hairline grid lines. Unscored hours break the line (honest gap, no interpolation).
+
+// Width reserved for the Y-axis labels. Matches the start padding on the X-axis ruler row.
+private val stressYAxisWidth = 32.dp
 
 @Composable
 private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
     val levels = remember(hours) { hours.map { it.level } }
+    if (levels.size < 2) return
+
+    var scrubFrac by remember { mutableStateOf<Float?>(null) }
+    val gradient = remember { Brush.horizontalGradient(*Palette.stressGradientStops.toTypedArray()) }
+
+    // Capture Compose colors at composition time — DrawScope lambdas run on the render thread.
+    val hairline = Palette.hairline
+    val textTertiary = Palette.textTertiary
+    val textPrimary = Palette.textPrimary
+    val stressColor = Palette.stressColor
+    val yAxisPx = with(LocalDensity.current) { stressYAxisWidth.toPx() }
+
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(100.dp)
             .clip(RoundedCornerShape(Metrics.cornerSm))
-            .semantics { contentDescription = daytimeLineDescription(hours) },
+            .semantics { contentDescription = daytimeLineDescription(hours) }
+            .pointerInput(hours) {
+                // Single gesture handler: first touch shows the crosshair; dragging scrubs
+                // across hours; lifting the finger clears it.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val chartW = (size.width - yAxisPx).coerceAtLeast(1f)
+                    scrubFrac = ((down.position.x - yAxisPx) / chartW).coerceIn(0f, 1f)
+                    var ptr = down
+                    while (ptr.pressed) {
+                        val event = awaitPointerEvent()
+                        ptr = event.changes.firstOrNull() ?: break
+                        if (ptr.pressed) {
+                            ptr.consume()
+                            scrubFrac = ((ptr.position.x - yAxisPx) / chartW).coerceIn(0f, 1f)
+                        }
+                    }
+                    scrubFrac = null
+                }
+            },
     ) {
         val w = size.width
         val h = size.height
-        if (w <= 0f || h <= 0f || levels.size < 2) return@Canvas
+        if (w <= 0f || h <= 0f) return@Canvas
 
         val topPad = 8.dp.toPx()
-        val bottomPad = 8.dp.toPx()
-        val usable = (h - topPad - bottomPad).coerceAtLeast(1f)
-        val stepX = if (levels.size > 1) w / (levels.size - 1) else w
+        val botPad = 8.dp.toPx()
+        val usable = (h - topPad - botPad).coerceAtLeast(1f)
+        val chartLeft = yAxisPx
+        val chartW = (w - chartLeft).coerceAtLeast(1f)
+        val stepX = if (levels.size > 1) chartW / (levels.size - 1) else chartW
 
-        // y for a 0–3 level: high stress sits high on the strip.
-        fun yFor(level: Double): Float {
-            val frac = (level / 3.0).coerceIn(0.0, 1.0).toFloat()
-            return topPad + (1f - frac) * usable
+        fun yFor(level: Double): Float =
+            topPad + (1f - (level / 3.0).coerceIn(0.0, 1.0).toFloat()) * usable
+
+        // Y-axis: hairline grid lines + scale labels 0 / 1 / 2 / 3.
+        val labelPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            textSize = 22f
+            textAlign = android.graphics.Paint.Align.RIGHT
+            color = textTertiary.toArgb()
+        }
+        listOf(0.0, 1.0, 2.0, 3.0).forEach { lvl ->
+            val y = yFor(lvl)
+            drawLine(color = hairline, start = Offset(chartLeft, y), end = Offset(w, y), strokeWidth = 1f)
+            drawContext.canvas.nativeCanvas.drawText(lvl.toInt().toString(), chartLeft - 6f, y + 8f, labelPaint)
         }
 
-        val gradient = Brush.horizontalGradient(*Palette.stressGradientStops.toTypedArray())
-
-        // Build contiguous runs of scored hours (null levels break the line).
+        // Gradient line + fill — contiguous runs (null levels break the line).
         var i = 0
         while (i < levels.size) {
             if (levels[i] == null) { i++; continue }
             var j = i
             val run = ArrayList<Offset>()
             while (j < levels.size && levels[j] != null) {
-                run.add(Offset(j * stepX, yFor(levels[j]!!)))
+                run.add(Offset(chartLeft + j * stepX, yFor(levels[j]!!)))
                 j++
             }
             if (run.size >= 2) {
-                // Soft gradient fill under the run.
                 val fill = Path().apply {
-                    moveTo(run.first().x, h - bottomPad)
+                    moveTo(run.first().x, h - botPad)
                     run.forEach { lineTo(it.x, it.y) }
-                    lineTo(run.last().x, h - bottomPad)
+                    lineTo(run.last().x, h - botPad)
                     close()
                 }
-                drawPath(
-                    fill,
-                    brush = gradient,
-                    alpha = StrandAlpha.chartFillSoft + 0.10f,
-                )
-                // The gradient line itself.
+                drawPath(fill, brush = gradient, alpha = StrandAlpha.chartFillSoft + 0.10f)
                 val line = Path().apply {
                     moveTo(run.first().x, run.first().y)
                     for (k in 1 until run.size) lineTo(run[k].x, run[k].y)
                 }
-                drawPath(
-                    line,
-                    brush = gradient,
-                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
-                )
+                drawPath(line, brush = gradient, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
             } else if (run.size == 1) {
-                // A lone scored hour: a small dot tinted to its level so it isn't lost.
-                drawCircle(
-                    color = StressRamp.color(levels[i]!!),
-                    radius = 2.5.dp.toPx(),
-                    center = run.first(),
-                )
+                drawCircle(color = StressRamp.color(levels[i]!!), radius = 2.5.dp.toPx(), center = run.first())
             }
             i = j
+        }
+
+        // Scrub crosshair + tooltip — only drawn while the user is touching the chart.
+        val frac = scrubFrac ?: return@Canvas
+        val scrubIdx = (frac * (levels.size - 1)).roundToInt().coerceIn(0, levels.size - 1)
+        val scrubX = chartLeft + scrubIdx * stepX
+        val pt = hours[scrubIdx]
+
+        // Dashed vertical crosshair at the selected hour.
+        drawLine(
+            color = textTertiary,
+            start = Offset(scrubX, topPad),
+            end = Offset(scrubX, h - botPad),
+            strokeWidth = 1.5.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f)),
+        )
+
+        val lvl = pt.level
+        if (lvl != null) {
+            val dotY = yFor(lvl)
+            // Ring dot at the scrubbed point.
+            drawCircle(color = stressColor, radius = 5.dp.toPx(), center = Offset(scrubX, dotY))
+            drawCircle(color = Color.White, radius = 2.5.dp.toPx(), center = Offset(scrubX, dotY))
+
+            // Tooltip pill: "9 am · 1.4" — avoid String.format; use integer tenths.
+            val tenths = (lvl * 10).roundToInt().coerceIn(0, 30)
+            val label = "${hourLabel(pt.hour)} · ${tenths / 10}.${tenths % 10}"
+            val tooltipPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                textSize = 26f
+                color = textPrimary.toArgb()
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                textAlign = android.graphics.Paint.Align.CENTER
+            }
+            val textW = tooltipPaint.measureText(label)
+            val pillPad = 10f
+            val pillW = textW + pillPad * 2
+            val pillH = 34f
+            val pillX = (scrubX - pillW / 2f).coerceIn(chartLeft, w - pillW)
+            val pillY = (dotY - pillH - 10.dp.toPx()).coerceAtLeast(topPad)
+            drawRoundRect(
+                color = stressColor.copy(alpha = 0.18f),
+                topLeft = Offset(pillX, pillY),
+                size = Size(pillW, pillH),
+                cornerRadius = CornerRadius(pillH / 2),
+            )
+            drawContext.canvas.nativeCanvas.drawText(label, pillX + pillW / 2f, pillY + pillH * 0.68f, tooltipPaint)
         }
     }
 }

@@ -2124,6 +2124,13 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                 if frame.count > 6, frame[6] == WhoopCommand.getDataRange.rawValue,
                    let newest = BLEManager.dataRangeNewestUnix(from: frame) {
                     strapNewestTs = newest                        // feeds the liveness watchdog
+                    // Observability for the "last night didn't sync" reports (#364): print the NEWEST
+                    // record the strap actually holds. With the persisted-N line this lets one connect tell
+                    // a banked-but-not-yet-reached backlog (newest == last night, cursor still grinding)
+                    // apart from a genuinely un-banked night (newest is older) — no more guessing.
+                    let d = ISO8601DateFormatter()
+                    d.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime, .withSpaceBetweenDateAndTime]
+                    log("Strap newest banked record: \(d.string(from: Date(timeIntervalSince1970: TimeInterval(newest)))) (from data range)")
                 }
                 // Clock correlation runs in both live and backfill modes. Once established it
                 // unblocks both the Collector (live path) and the Backfiller (chunk decoding).

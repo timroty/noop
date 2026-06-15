@@ -1887,7 +1887,15 @@ class WhoopBleClient(
                     // can't fall in the unix-range window. (#78 fork)
                     val cmdOff = if (connectedFamily == DeviceFamily.WHOOP5) 10 else 6
                     if (frame.size > cmdOff && (frame[cmdOff].toInt() and 0xFF) == CommandNumber.GET_DATA_RANGE.rawValue) {
-                        dataRangeNewestUnix(frame)?.let { strapNewestTs = it }
+                        dataRangeNewestUnix(frame)?.let {
+                            strapNewestTs = it
+                            // Observability for "last night didn't sync" (#364): log the NEWEST record the
+                            // strap actually holds. With the persisted-N line, one connect distinguishes a
+                            // banked-but-not-yet-reached backlog (newest == last night, cursor grinding) from
+                            // a genuinely un-banked night (newest is older) — mirrors the Swift line.
+                            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+                            log("Strap newest banked record: ${fmt.format(java.util.Date(it * 1000L))} (from data range)")
+                        }
                     }
 
                     // PERSISTENCE / OFFLOAD ROUTING — port of the didUpdateValueFor tail block.

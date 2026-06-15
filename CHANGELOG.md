@@ -17,6 +17,13 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## 4.0.4 — Sync visibility & a sharper Stress timeline
+
+- Sync diagnostics: the strap log now shows the newest record your band actually holds, so a "last night didn't sync" report tells us whether the night is banked-but-not-yet-reached vs genuinely not on the strap. Thanks @idkwargwanbear (#364).
+- Android: the Today stress timeline gets a Y-axis + tap-to-read. Thanks @ujix (#441).
+
+---
+
 ## 4.0.3 — Date fixes, UI polish & clearer diagnostics
 
 - **Today's date now matches Intelligence History.** On Android, the Today/Recovery screen could label a

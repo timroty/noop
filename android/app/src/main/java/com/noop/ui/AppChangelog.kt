@@ -37,6 +37,15 @@ object AppChangelog {
     /** Newest first. */
     val releases: List<Release> = listOf(
         Release(
+            version = "4.0.4",
+            title = "Sync visibility + a sharper Stress timeline",
+            date = "June 2026",
+            items = listOf(
+                "Sync diagnostics: the strap log now shows the newest record your band actually holds. For \"last night didn't sync\" reports, one connect now tells us whether the night just hasn't been reached yet by a long backlog (it's banked, the sync is still grinding) versus genuinely not on the strap — instead of guessing. Thanks @idkwargwanbear (#364).",
+                "The Today stress timeline gets a Y-axis and tap-to-read — labelled stress levels, and you can scrub the chart to read each hour. Thanks @ujix (#441).",
+            ),
+        ),
+        Release(
             version = "4.0.3",
             title = "Date fixes, UI polish & clearer diagnostics",
             date = "June 2026",
