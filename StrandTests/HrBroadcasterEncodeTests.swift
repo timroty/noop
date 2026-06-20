@@ -5,6 +5,7 @@ import XCTest
 /// its live strap HR back out as a standard Bluetooth HR peripheral (so a treadmill / Zwift / Peloton can
 /// read it). The encoder is the inverse of `StandardHeartRate.parse`, so each case here is round-tripped
 /// back through the parser to prove the two agree byte-for-byte. No CoreBluetooth is touched.
+@MainActor
 final class HrBroadcasterEncodeTests: XCTestCase {
 
     // MARK: - u8 path (the normal case: every realistic bpm < 256)

@@ -107,6 +107,7 @@ final class CaffeineDecayTests: XCTestCase {
 
     // MARK: - Store (UserDefaults-backed, opt-in, sanitising)
 
+    @MainActor
     private func freshStore(now: Date) -> CaffeineLogStore {
         let suite = UserDefaults(suiteName: "caffeine.test.\(UUID().uuidString)")!
         return CaffeineLogStore(defaults: suite, now: { now })

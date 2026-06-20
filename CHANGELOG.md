@@ -17,6 +17,29 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## 6.0.2 — Sleep, properly sorted, and an app that explains itself (all platforms)
+
+A from-scratch rework of how NOOP picks your main sleep, plus a new layer of in-app explanations so you are never left guessing what the app is doing or why.
+
+**Sleep**
+- **Your night is your night.** NOOP now scores every sleep block on how much you actually slept and how close it was to your usual hours (learned from your own history), instead of the old rigid evening-wins rule. A long sleep that started at an odd time is no longer filed away as a nap, and the Sleep tab and your recovery scores always land on the same night. Grounded in real strap logs and the sleep-staging research, not a quick patch. (#547)
+- The recovery side no longer blanks to "No Data" after midnight while live metrics are running; it carries last night's value, clearly stamped, until tonight's lands. (#543)
+
+**The app explains itself**
+- Tap the info on a sleep block to see exactly why it is your main sleep or a nap, with a nudge to edit if it is wrong.
+- Charge, Effort and Rest tiles tell you when they are still calibrating (and how many nights are left), when they are showing last night's number, or when they simply need the strap, instead of a bare dash.
+- A Recording chip shows when the strap is actually connected and saving data.
+- A small badge on each number shows whether NOOP worked it out on your device or imported it from WHOOP or Apple Health.
+- **New: a "How NOOP works" page** in Settings, a short plain-English read on sleep sorting, how scores build, what recording means, and where your numbers come from.
+
+**Help us get sleep right**
+- If your sleep still looks off after this, open an issue with a strap log and the dates. That is the fastest way for us to pin your case.
+
+**Install / update**
+- **macOS:** the universal app zip on the Releases page.
+- **iOS:** sideload the IPA (AltStore / SideStore).
+- **Android:** the APK on the Releases page.
+
 ## 6.0.1 — Buzz WHOOP 4 toggle (Android)
 
 - **New: a "Buzz WHOOP 4" toggle in the Smart Alarm screen (Android).** When on, your WHOOP 4.0's firmware alarm is armed at your earliest wake time, so the strap buzzes first and the phone alarm is the guaranteed backup. Off by default. This was credited in 6.0.0 but missed the cut, this is the real thing. Thanks @ujix for the feature and for catching it. (#536)

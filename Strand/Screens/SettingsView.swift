@@ -107,6 +107,11 @@ struct SettingsView: View {
     /// "How your scores work" explainer sheet, reachable any time from About.
     @State private var showScoringGuide = false
 
+    /// "How NOOP works" primer sheet (the four-section explainability primer), reachable any
+    /// time from About — covers how sleep is sorted, how scores + calibration work, what
+    /// recording means, and where the provenance badges come from.
+    @State private var showHowNoopWorks = false
+
     /// Steps-estimate calibration sheet (WHOOP 4.0). Reached from the Profile card's "Steps estimate"
     /// tap-through; explains the estimate, shows the current fit + a recent estimated-vs-phone table,
     /// and offers a manual coefficient override. See [StepsCalibrationSheet].
@@ -150,6 +155,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showScoringGuide) {
             ScoringGuideView(onClose: { showScoringGuide = false })
+        }
+        .sheet(isPresented: $showHowNoopWorks) {
+            HowNoopWorksView(onClose: { showHowNoopWorks = false })
         }
         .sheet(isPresented: $showStepsCalibration) {
             StepsCalibrationSheet(repo: model.repo, onClose: { showStepsCalibration = false })
@@ -1413,6 +1421,36 @@ struct SettingsView: View {
                     .buttonStyle(.bordered)
                     .tint(StrandPalette.accent)
                 }
+
+                // How NOOP works — the plain-English primer: how sleep is sorted, how scores +
+                // calibration work, what recording means, and where the provenance badges come
+                // from. The "?" entry point to the four-section explainability primer.
+                Button {
+                    showHowNoopWorks = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "questionmark.circle")
+                            .foregroundStyle(StrandPalette.accent)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("How NOOP works")
+                                .font(StrandFont.body)
+                                .foregroundStyle(StrandPalette.textPrimary)
+                            Text("Sleep sorting, scores, recording, and where your numbers come from.")
+                                .font(StrandFont.footnote)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("How NOOP works")
 
                 // How your scores work — the honest explainer for Charge / Effort / Rest and the
                 // confidence labels. Always reachable here, mirroring the "What's new" affordance.

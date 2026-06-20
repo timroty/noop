@@ -212,7 +212,15 @@ public enum AnalyticsEngine {
                                   //     regular). nil → the consistency term is neutral (0.5) since a single
                                   //     day carries no regularity signal — the caller supplies it from history.
                                   sleepNeedHours: Double = Rest.defaultNeedHours,
-                                  sleepConsistency: Double? = nil) -> DayResult {
+                                  sleepConsistency: Double? = nil,
+                                  // The user's learned habitual midsleep (local time-of-day seconds in
+                                  // [0, 86400)) for the main-night scored pick, so a late/shift sleeper's
+                                  // real night out-scores a daytime nap. nil = cold-start: the selector
+                                  // falls back to the broad overnight-band bonus. IntelligenceEngine
+                                  // computes this once per run from the trailing sleep history and threads
+                                  // it down; pure-function callers/tests leave it nil and stay on the
+                                  // cold-start band. (#547)
+                                  habitualMidsleepSec: Int? = nil) -> DayResult {
 
         // ── Sleep detection + staging ─────────────────────────────────────────
         let allSessions = SleepStager.detectSleep(hr: hr, rr: rr, resp: resp, gravity: gravity,
@@ -230,9 +238,15 @@ public enum AnalyticsEngine {
         // report). Naps stay their OWN session rows in `sleepSessions` / `cachedSleep`, where the Sleep
         // tab lists and labels them separately. `SleepStageTotals.mainNightIndex` is the single shared
         // selector so the analytics rollup and the Sleep tab resolve to the identical block.
+        // Pick by the LEARNED-TIMING score, threading the user's learned habitual midsleep so a
+        // late/shift sleeper's real night out-scores a daytime nap (nil = cold-start overnight band).
+        // No selector-side gap-bridge here: the SleepStager already bridges sparse-gravity gaps (up to
+        // ~90 min) when it forms `matched`, and a bridged pick would map to only ONE fragment's bounds —
+        // the AASM aggregate below reads the chosen session's stages, so re-merging across fragments is
+        // out of scope and would risk dropping the second fragment's sleep. Select over `matched` as-is. (#547)
         let mainNight: SleepSession? = SleepStageTotals.mainNightIndex(
             matched.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) },
-            offsetSec: tzOffsetSeconds).map { matched[$0] }
+            offsetSec: tzOffsetSeconds, habitualMidsleepSec: habitualMidsleepSec).map { matched[$0] }
 
         // ── Daily sleep aggregates (AASM) over the MAIN night only (#525) ──────
         var deepS = 0.0, remS = 0.0, lightS = 0.0, tstS = 0.0

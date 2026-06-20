@@ -184,6 +184,12 @@ object AnalyticsEngine {
         // null (single-day / pure callers with no history) → the term drops and its weight
         // renormalizes, exactly like the recovery driver-drop discipline. (Charge/Effort/Rest)
         sleepConsistency: Double? = null,
+        // The user's learned habitual midsleep (local time-of-day seconds in [0, 86400)) for the
+        // main-night scored pick, so a late/shift sleeper's real night out-scores a daytime nap. null =
+        // cold-start: the selector falls back to the broad overnight-band bonus. IntelligenceEngine
+        // computes this once per run from the trailing sleep history and threads it down; pure-function
+        // callers/tests leave it null and stay on the cold-start band. Mirrors Swift. (#547)
+        habitualMidsleepSec: Long? = null,
     ): DayResult {
 
         // ── Sleep detection + staging ─────────────────────────────────────────
@@ -204,9 +210,16 @@ object AnalyticsEngine {
         // report). Naps stay their OWN session rows in `sleepSessions`, where the Sleep tab lists and
         // labels them separately. [SleepStageTotals.mainNightIndex] is the single shared selector so the
         // analytics rollup and the Sleep tab resolve to the identical block.
+        // Pick by the LEARNED-TIMING score, threading the user's learned habitual midsleep so a
+        // late/shift sleeper's real night out-scores a daytime nap (null = cold-start overnight band).
+        // No selector-side gap-bridge here: the SleepStager already bridges sparse-gravity gaps (up to
+        // ~90 min) when it forms `matched`, and a bridged pick would map to only ONE fragment's bounds —
+        // the AASM aggregate below reads the chosen session's stages, so re-merging across fragments is
+        // out of scope and would risk dropping the second fragment's sleep. Select over `matched` as-is.
+        // Mirrors Swift. (#547)
         val mainNight: DetectedSleep? = SleepStageTotals.mainNightIndex(
             matched.map { SleepStageTotals.NightBlock(it.start, it.end) },
-            tzOffsetSeconds,
+            tzOffsetSeconds, habitualMidsleepSec,
         )?.let { matched[it] }
 
         // ── Daily sleep aggregates (AASM) over the MAIN night only (#525) ──────

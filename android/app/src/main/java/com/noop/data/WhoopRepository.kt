@@ -448,6 +448,40 @@ class WhoopRepository(private val dao: WhoopDao) {
     suspend fun sleepSessions(deviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT) =
         dao.sleepSessions(deviceId, from, to, limit)
 
+    /**
+     * The user's learned habitual midsleep (local time-of-day seconds) for [deviceId], or null under
+     * [com.noop.analytics.SleepStageTotals.HABITUAL_MIN_DAYS] of history (cold-start). Computed EXACTLY as
+     * `IntelligenceEngine.computeHabitualMidsleep` does — the SAME raw imported + computed ("-noop")
+     * sleep-session union, one HistoryBlock per session (effective bounds, dayKey = the LOCAL calendar day
+     * of the midpoint), deferring to the SAME shared [com.noop.analytics.SleepStageTotals.habitualMidsleepSec]
+     * pure function — so the Sleep tab's main-night pick aligns to the same value the analytics rollup used.
+     * The whole point of #547: the UI hero and the analytics daily total resolve to the SAME block for a
+     * shift/late sleeper, not just at cold-start. Reads a wide window so the distinct-day count comfortably
+     * clears the threshold; `habitualMidsleepSec` keeps the longest block per day, so window/order/source
+     * merge differences wash out. Mirrors Swift `Repository.habitualMidsleepSec`. (#547)
+     */
+    suspend fun habitualMidsleepSec(deviceId: String, days: Int = 4000): Long? {
+        val now = System.currentTimeMillis() / 1000L
+        val lo = now - days * 86_400L
+        val hi = now + 86_400L
+        val imported = dao.sleepSessions(deviceId, lo, hi, 4000)
+        val computed = dao.sleepSessions(computedDeviceId(deviceId), lo, hi, 4000)
+        val offsetSec = (java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000).toLong()
+        val blocks = (imported + computed).mapNotNull { s ->
+            val start = s.effectiveStartTs
+            val end = s.endTs
+            if (end <= start) {
+                null
+            } else {
+                val mid = start + (end - start) / 2
+                com.noop.analytics.SleepStageTotals.HistoryBlock(
+                    start, end, com.noop.analytics.AnalyticsEngine.dayString(mid, offsetSec),
+                )
+            }
+        }
+        return com.noop.analytics.SleepStageTotals.habitualMidsleepSec(blocks, offsetSec)
+    }
+
     suspend fun metricSeries(deviceId: String, key: String, from: String, to: String) =
         dao.metricSeries(deviceId, key, from, to)
 

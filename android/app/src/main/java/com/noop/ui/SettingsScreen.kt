@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Sensors
@@ -288,6 +289,10 @@ fun SettingsScreen(vm: AppViewModel) {
 
     // "How your scores work" explainer sheet, reachable any time from About (macOS/iOS parity).
     var showScoringGuide by remember { mutableStateOf(false) }
+
+    // "How NOOP works" primer sheet (COMPONENT 5 of the explainability layer), reachable any time
+    // from About — the plain-English tour of sleep sorting, scores, recording and provenance.
+    var showHowNoopWorks by remember { mutableStateOf(false) }
 
     // "Recalibrate Charge baseline" confirm dialog (Charge advanced). Writes now-seconds to BOTH the
     // noop.hrvBaselineEpoch and noop.recoveryBaselineEpoch prefs so foldHistory re-seeds every baseline
@@ -1823,6 +1828,42 @@ fun SettingsScreen(vm: AppViewModel) {
                     }
                 }
 
+                // How NOOP works — the plain-English primer (COMPONENT 5 of the explainability layer):
+                // how sleep is sorted, how scores + calibration work, what recording means, and where
+                // each number comes from. The one "?" entry point into the primer (macOS/iOS parity).
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Palette.surfaceInset)
+                        .border(1.dp, Palette.hairline, RoundedCornerShape(10.dp))
+                        .clickable { showHowNoopWorks = true }
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .semantics { contentDescription = "How NOOP works" },
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.MenuBook,
+                            contentDescription = null,
+                            tint = Palette.accent,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("How NOOP works", style = NoopType.headline, color = Palette.textPrimary)
+                            Text(
+                                "Sleep sorting, scores, recording, and where your numbers come from.",
+                                style = NoopType.footnote,
+                                color = Palette.textSecondary,
+                            )
+                        }
+                        Text("›", style = NoopType.title2, color = Palette.accent)
+                    }
+                }
+
                 // Medical disclaimer — inset well with a warning-tinted hairline.
                 Row(
                     modifier = Modifier
@@ -1923,6 +1964,18 @@ fun SettingsScreen(vm: AppViewModel) {
             ) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Palette.surfaceBase) {
                     ScoringGuideScreen(onClose = { showScoringGuide = false })
+                }
+            }
+        }
+
+        // "How NOOP works" primer sheet, opened from the About row above. Same full-screen Dialog idiom.
+        if (showHowNoopWorks) {
+            Dialog(
+                onDismissRequest = { showHowNoopWorks = false },
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = Palette.surfaceBase) {
+                    HowNoopWorksScreen(onClose = { showHowNoopWorks = false })
                 }
             }
         }

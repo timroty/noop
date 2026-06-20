@@ -1,6 +1,7 @@
 package com.noop.ui
 
 import com.noop.data.AppleDaily
+import com.noop.data.DailyMetric
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -155,5 +156,116 @@ class TodayMetricTilesTest {
             val hint = buildingHint(m, isToday = true)!!
             assert(!hint.contains('—')) { "buildingHint($m) must not contain an em-dash: $hint" }
         }
+    }
+
+    // MARK: lastScoredRecoveryDay — the #543 carry-over selector that keeps the WHOLE recovery side
+    // populated at the logical-day rollover (Charge ring + HRV / resting-HR / respiratory / SpO₂ tiles +
+    // Synthesis / Contributors / Readiness), instead of blanking to "No Data" while live HR ticks. This
+    // pins the GATE + SELECTION shared by all those read-outs. Mirrors the iOS TodayCarryOverTests.
+
+    private fun recDay(
+        day: String,
+        recovery: Double?,
+        hrv: Double? = null,
+        rhr: Int? = null,
+        spo2: Double? = null,
+        resp: Double? = null,
+    ) = DailyMetric(
+        deviceId = "my-whoop", day = day, recovery = recovery,
+        avgHrv = hrv, restingHr = rhr, spo2Pct = spo2, respRateBpm = resp,
+    )
+
+    @Test
+    fun lastScoredRecoveryDay_carriesTheFreshestScoredPriorDay_whenTodayUnscoredAndPastCalibration() {
+        val days = listOf(
+            recDay("2026-06-17", 60.0),
+            recDay("2026-06-18", 72.0),
+            recDay("2026-06-19", null), // today, not scored yet
+        )
+        val carried = lastScoredRecoveryDay(
+            days, selectedDayKey = "2026-06-19",
+            isToday = true, todayScored = false, isCalibrating = false,
+        )
+        assertEquals("2026-06-18", carried?.day)
+        assertEquals(72.0, carried?.recovery)
+    }
+
+    @Test
+    fun lastScoredRecoveryDay_nothingCarried_whenTodayIsAlreadyScored() {
+        val days = listOf(recDay("2026-06-18", 72.0), recDay("2026-06-19", 55.0))
+        assertNull(
+            lastScoredRecoveryDay(
+                days, selectedDayKey = "2026-06-19",
+                isToday = true, todayScored = true, isCalibrating = false,
+            ),
+        )
+    }
+
+    @Test
+    fun lastScoredRecoveryDay_nothingCarried_whileCalibrating() {
+        // Calibration owns its own "N of 4" Charge copy — the carry-over must stand down.
+        val days = listOf(recDay("2026-06-18", 72.0), recDay("2026-06-19", null))
+        assertNull(
+            lastScoredRecoveryDay(
+                days, selectedDayKey = "2026-06-19",
+                isToday = true, todayScored = false, isCalibrating = true,
+            ),
+        )
+    }
+
+    @Test
+    fun lastScoredRecoveryDay_nothingCarried_onANavigatedPastDay() {
+        // A navigated past day with no score is missing data, not a rollover — never carry.
+        val days = listOf(recDay("2026-06-17", 60.0), recDay("2026-06-18", 72.0))
+        assertNull(
+            lastScoredRecoveryDay(
+                days, selectedDayKey = "2026-06-18",
+                isToday = false, todayScored = false, isCalibrating = false,
+            ),
+        )
+    }
+
+    @Test
+    fun lastScoredRecoveryDay_excludesTodaysOwnKey_soItNeverEchoesToday() {
+        // Today carries vitals but no recovery — it must NOT be chosen (we'd echo today as "last night").
+        val days = listOf(
+            recDay("2026-06-18", 72.0),
+            recDay("2026-06-19", null, hrv = 40.0),
+        )
+        val carried = lastScoredRecoveryDay(
+            days, selectedDayKey = "2026-06-19",
+            isToday = true, todayScored = false, isCalibrating = false,
+        )
+        assertEquals("2026-06-18", carried?.day)
+    }
+
+    @Test
+    fun lastScoredRecoveryDay_null_whenNoPriorDayWasEverScored() {
+        // A genuinely-never-scored history carries nothing — the tiles honestly stay "No Data".
+        val days = listOf(recDay("2026-06-18", null), recDay("2026-06-19", null))
+        assertNull(
+            lastScoredRecoveryDay(
+                days, selectedDayKey = "2026-06-19",
+                isToday = true, todayScored = false, isCalibrating = false,
+            ),
+        )
+    }
+
+    @Test
+    fun lastScoredRecoveryDay_carriedRow_keepsItsOwnMissingMetricsAsNull_neverFabricated() {
+        // A metric the carried night genuinely lacks (e.g. a BLE-only night with no SpO₂) stays null on
+        // the carried row, so the SpO₂ tile still resolves to "No Data" rather than a fabricated number.
+        val days = listOf(
+            recDay("2026-06-18", 72.0, hrv = 55.0, rhr = 50, spo2 = null, resp = 14.2),
+            recDay("2026-06-19", null),
+        )
+        val carried = lastScoredRecoveryDay(
+            days, selectedDayKey = "2026-06-19",
+            isToday = true, todayScored = false, isCalibrating = false,
+        )
+        assertEquals(55.0, carried?.avgHrv)
+        assertEquals(50, carried?.restingHr)
+        assertNull(carried?.spo2Pct)
+        assertEquals(14.2, carried?.respRateBpm)
     }
 }

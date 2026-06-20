@@ -94,6 +94,7 @@ final class ExperimentalDriversTests: XCTestCase {
     /// A `.huami` device is NOT a WHOOP, so the SourceCoordinator routes it to a non-WHOOP source. This
     /// pins that the new enum case round-trips and is classified as non-WHOOP (so the WHOOP path is never
     /// stolen by an Amazfit/Mi Band).
+    @MainActor
     func testHuamiSourceKindIsNotWhoop() {
         let huami = PairedDevice(
             id: "huami-1", brand: "Amazfit", model: "GTR 4", peripheralId: "AA",
@@ -104,6 +105,7 @@ final class ExperimentalDriversTests: XCTestCase {
     }
 
     /// A Garmin row is a plain `.liveBLE` device (standard broadcast HR), branded "Garmin", non-WHOOP.
+    @MainActor
     func testGarminSourceKindIsLiveBLENonWhoop() {
         let garmin = PairedDevice(
             id: "garmin-1", brand: "Garmin", model: "Forerunner 265", peripheralId: "BB",

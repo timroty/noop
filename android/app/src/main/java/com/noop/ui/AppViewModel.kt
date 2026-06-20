@@ -549,6 +549,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
                         recoveryEpoch = NoopPrefs.of(appContext)
                             .getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
+                        // Route the engine's per-day scoring diagnostic into the SAME shareable strap log
+                        // every other subsystem writes to (ble.externalLog PII-scrubs each line), so a bug
+                        // report ships proof of what was computed per day. Mirrors the macOS sink wired to
+                        // live.append(log:). (Sleep overhaul §2.5.)
+                        diag = { line -> ble.externalLog(line) },
                     )
                     // analyzeRecent now hops to Dispatchers.Default; a scope cancellation surfaces as a
                     // CancellationException that runCatching would otherwise swallow, breaking the loop's
@@ -843,23 +848,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** All workouts for the Workouts screen (newest first), dismissed detected bouts removed. */
     val workouts: StateFlow<List<WorkoutRow>> = _workouts.asStateFlow()
 
-    /** Persist a bed/wake-time edit for one sleep session (delete-then-upsert at the new window).
-     *  Swallows failures — the Sleep screen already applied the change optimistically. */
+    /** Persist a bed/wake-time edit for one sleep session (delete-then-upsert at the new window), then
+     *  re-score the affected day immediately so Charge / Rest / recovery and the persisted
+     *  sleep_performance honor the corrected window without waiting for the 15-min loop — matching Swift
+     *  SleepView, which calls analyzeRecent() right after editSleepTimes. Swallows persist failures — the
+     *  Sleep screen already applied the change optimistically. */
     suspend fun updateSleepSessionTimes(session: com.noop.data.SleepSession, newStartTs: Long, newEndTs: Long) {
         runCatching { repository.updateSleepSessionTimes(session, newStartTs, newEndTs) }
+        rescoreAfterSleepEdit()
     }
 
-    /** Delete one sleep session. Swallows failures — the Sleep screen already removed it
+    /** Delete one sleep session, then re-score the affected day immediately so the dashboard aggregates
+     *  recompute as if the misread night were never recorded — matching Swift SleepView's analyzeRecent()
+     *  after deleteSleepSession. Swallows persist failures — the Sleep screen already removed it
      *  optimistically, so the day recomputes without the misread night either way. (#281) */
     suspend fun deleteSleepSession(session: com.noop.data.SleepSession) {
         runCatching { repository.deleteSleepSession(session) }
+        rescoreAfterSleepEdit()
     }
 
     /** Manually add a missed nap as its OWN session (#508) — staged from raw, written under the computed
-     *  source with userEdited=true so the recompute guard keeps it and it's never folded into main sleep.
-     *  Swallows failures; the Sleep screen recomputes from the persisted rows on its next reload. */
+     *  source with userEdited=true so the recompute guard keeps it and it's never folded into main sleep —
+     *  then re-score the affected day immediately so the day's aggregates pick up the new session, matching
+     *  Swift SleepView's analyzeRecent() after addManualNap. Swallows persist failures; the Sleep screen
+     *  recomputes from the persisted rows on its next reload. */
     suspend fun addManualNap(startTs: Long, endTs: Long) {
         runCatching { repository.addManualNap(deviceId, startTs, endTs) }
+        rescoreAfterSleepEdit()
+    }
+
+    /**
+     * Re-score recent days right after a sleep edit (edit / delete / add-nap), so daily recovery + the
+     * persisted sleep_performance recompute and [recentDays] (daysMergedFlow) republishes to Today the
+     * same instant the Sleep tab updates — closing the up-to-15-min staleness where Charge / Rest on Today
+     * disagreed with the Sleep tab after an edit (audit #2/#3/#4). The args are kept byte-identical to the
+     * launch + 15-min analyze loop above (so a manual re-score and the loop produce the same scores);
+     * mirrors Swift SleepView, which calls intelligence.analyzeRecent() after each edit. Best-effort —
+     * a failure here just leaves the loop to catch up; never throws into the edit caller. CancellationException
+     * is rethrown so a ViewModel teardown mid-edit isn't swallowed (matches the loop's #125 handling).
+     */
+    private suspend fun rescoreAfterSleepEdit() {
+        runCatching {
+            IntelligenceEngine.analyzeRecent(
+                repo = repository,
+                profile = currentProfile(),
+                importedDeviceId = deviceId,
+                maxHROverride = profileStore.hrMaxOverride
+                    .takeIf { it > 0 }?.toDouble(),
+                ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
+                manualStepCoefficient = profileStore.stepsManualOverride,
+                persistStepsCalibration = { cal ->
+                    profileStore.stepsCalibrationCoefficient = cal.coefficient
+                    profileStore.stepsCalibrationSampleDays = cal.sampleDays
+                    profileStore.stepsCalibrationConfidence = cal.confidence
+                    profileStore.stepsCalibrationManual = cal.manual
+                },
+                baselineEpoch = NoopPrefs.of(appContext)
+                    .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
+                recoveryEpoch = NoopPrefs.of(appContext)
+                    .getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
+            )
+        }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
     }
 
     /** Re-read every source + the dismissed markers and republish [workouts]. */
