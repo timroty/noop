@@ -190,7 +190,7 @@ final class AppModel: ObservableObject {
         // subsystem writes to (PII-scrubbed by `live.append(log:)`), so a bug report ships proof of what
         // was computed per day. `live` is captured strongly (created just above) — the engine outlives the
         // app session, so there's no retain-cycle risk worth a weak dance here. (Sleep overhaul §2.5.)
-        self.intelligence.diagnosticSink = { [live] line in live.append(log: line) }
+        self.intelligence.diagnosticSink = { [live] line, domain in live.append(log: line, domain: domain) }
         // Smooth HR centrally so it's solid everywhere it's shown.
         live.$heartRate.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)
         live.$rr.sink { [weak self] _ in self?.ingestHR() }.store(in: &hrCancellables)

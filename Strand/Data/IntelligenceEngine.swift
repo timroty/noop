@@ -98,11 +98,13 @@ final class IntelligenceEngine: ObservableObject {
 
     /// Optional sink for the per-day scoring diagnostic, fed line-by-line into the SAME shareable strap
     /// log the user already exports (PII-scrubbed by `LiveState.append(log:)`). Defaults to nil so the
-    /// engine stays testable with no UI; `AppModel` wires it to `live.append(log:)`. Each line is a
-    /// concise, counts-only summary ("sleep day=… totalSleepMin=… matched=… source=…") so the next bug
-    /// report ships proof of what was computed per day — addressing the project's log-failures-not-
-    /// successes blind spot and the data needed to settle "Rest repeats across days". (Sleep overhaul §2.5.)
-    var diagnosticSink: ((String) -> Void)?
+    /// engine stays testable with no UI. Each line is a concise, counts-only summary ("sleep day=…
+    /// totalSleepMin=… matched=… source=…") so the next bug report ships proof of what was computed per
+    /// day, addressing the project's log-failures-not-successes blind spot and the data needed to settle
+    /// "Rest repeats across days". (Sleep overhaul §2.5.)
+    /// `AppModel` wires it to `live.append(log:domain:)`. Each line is a concise, counts-only summary,
+    /// optionally tagged with the TestDomain so the Sleep/Battery emitters land under their profile tag.
+    var diagnosticSink: ((String, TestDomain?) -> Void)?
 
     init(repo: Repository, profile: ProfileStore, deviceId: String) {
         self.repo = repo; self.profile = profile; self.deviceId = deviceId
@@ -210,7 +212,7 @@ final class IntelligenceEngine: ObservableObject {
             return   // leave the flag unset so a transient failure retries
         }
         if result.didChange {
-            diagnosticSink?("Heal(#547): purged \(result.rawRowsDeleted) raw + \(result.computedRowsDeleted) computed row(s) with implausible (bad-clock) timestamps; rescoring the real days.")
+            diagnosticSink?("Heal(#547): purged \(result.rawRowsDeleted) raw + \(result.computedRowsDeleted) computed row(s) with implausible (bad-clock) timestamps; rescoring the real days.", nil)
             // Recompute the affected real days from the surviving raw rows so the polluted (e.g. 721)
             // blocks regenerate cleanly. The dashboard refresh happens inside analyzeRecent on persist.
             await analyzeRecent(maxDays: historyDays)
@@ -453,7 +455,7 @@ final class IntelligenceEngine: ObservableObject {
             nightlyRhrByDay[res.daily.day] = res.daily.restingHr.map(Double.init)
             nightlyRespByDay[res.daily.day] = res.daily.respRateBpm
             nightlySkinByDay[res.daily.day] = res.nightlySkinTempC
-            if let line = scan.rhrLine { diagnosticSink?(line) }
+            if let line = scan.rhrLine { diagnosticSink?(line, nil) }
             scoredNights.append((daily: res.daily, strain: res.strain, cachedSleep: res.cachedSleep,
                                  workouts: res.workouts, nightlySkin: res.nightlySkinTempC,
                                  sessionMotion: res.sessionMotionByStart))
@@ -579,7 +581,7 @@ final class IntelligenceEngine: ObservableObject {
             // across days" question with data rather than a guess. Gated by the existing strap-log export.
             let tsmLog = daily.totalSleepMin.map { String(Int($0.rounded())) } ?? "nil"
             diagnosticSink?("sleep day=\(daily.day) totalSleepMin=\(tsmLog) "
-                            + "matched=\(night.cachedSleep.count) source=\(source.logToken)")
+                            + "matched=\(night.cachedSleep.count) source=\(source.logToken)", nil)
             dailies.append(daily.with(recovery: recovery, skinTempDevC: skinDev))
             if let rest = AnalyticsEngine.Rest.composite(daily: daily) {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
